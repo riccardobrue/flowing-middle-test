@@ -14,7 +14,7 @@ Required services:
 
 - **ElasticLoadBalancingV2**: In order to accomplish with the fault-tolerance requirement (subnets) and adaptiveness to load.
 
-![](C:\Users\brux9\AppData\Roaming\marktext\images\2023-02-13-14-16-21-image.png)
+![](arch.png)
 
 ### Design notes
 
@@ -30,8 +30,6 @@ The following rationales have been made in order to create the required architec
 
 - There is a local MySQL database inside the EC2 instance for simplicity;
 
-
-
 ## Pre-requirements and parameters
 
 In order to go ahead with the initialization of the project, you should create the following preliminaries:
@@ -41,8 +39,6 @@ In order to go ahead with the initialization of the project, you should create t
 - **SSLCertARN**: The existing SSL/TLS certificate ARN in order to enable HTTPS protocol. This can be created using the *AWS Certificate Manager*.
 
 - **HostedZoneId**: The ID of the existing hosted zone
-
-
 
 The parameters file contenta sample should look like this and have the same parameters keys.
 
@@ -58,8 +54,6 @@ The parameters file contenta sample should look like this and have the same para
 {    "ParameterKey": "HostedZoneId",    "ParameterValue": "existing_zone_id"  }
 ]
 ```
-
-
 
 ## Installation instruction
 
@@ -78,11 +72,7 @@ aws cloudformation delete-stack --stack-name "demo-flowing-wordpress-test"
 
 #UPDATE:
 aws cloudformation update-stack --stack-name "demo-flowing-wordpress-test" --template-body "file://template.yaml" --parameters "file://parameters-file.json"
-
-
 ```
-
-
 
 ## User guide
 
@@ -93,10 +83,6 @@ Once the stack creation has completed, the WordPress will be deployed into a EC2
 ## Missing requirements
 
 The CI/CD requirement is missing because is would require pipelines, this technology is still not known very well and it has been preferred to avoid adding it into this test.
-
-
-
-
 
 ## References
 

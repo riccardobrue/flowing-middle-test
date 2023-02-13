@@ -1,0 +1,10 @@
+[  
+{    "ParameterKey": "DBName",    "ParameterValue": "test_sb_name"  },  
+{    "ParameterKey": "DBPassword",    "ParameterValue": "test_psw"  },  
+{    "ParameterKey": "DBUsername",    "ParameterValue": "user"  },  
+{    "ParameterKey": "EC2InstanceType",    "ParameterValue": "t1.micro"  },  
+{    "ParameterKey": "WordPressVersion",    "ParameterValue": "5.8"  },  
+{    "ParameterKey": "KeyName",    "ParameterValue": "SSH-key_pair_sample"  },  
+{    "ParameterKey": "SSLCertARN",    "ParameterValue": "arn:aws:acm:eu-west-1:123467890"  },
+{    "ParameterKey": "HostedZoneId",    "ParameterValue": "IDVAL123"  }
+]
