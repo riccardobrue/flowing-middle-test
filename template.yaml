@@ -1,0 +1,426 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Parameters:
+  WordPressVersion:
+    Type: String
+    Default: "5.7"
+  DBName:
+    Type: String
+    Default: "wordpress"
+  DBUsername:
+    Type: String
+    Default: "wordpressuser"
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Default: "password"
+  EC2InstanceType:
+    Type: String
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+  SSLCertARN:
+    Description: ID of the SSL certificate to enable HTTPS
+    Type: String
+  HostedZoneId:
+    Description: ID of the Hosted Zone to be attached to the load balancer
+    Type: String
+
+Mappings:
+  AWSInstanceType2Arch:
+    t1.micro:
+      Arch: HVM64
+    t2.nano:
+      Arch: HVM64
+    t2.micro:
+      Arch: HVM64
+    t2.small:
+      Arch: HVM64
+    t2.medium:
+      Arch: HVM64
+    t2.large:
+      Arch: HVM64
+  AWSRegionArch2AMI:
+    eu-central-1:
+      HVM64: ami-0474863011a7d1541
+      HVMG2: ami-0aa1822e3eb913a11
+    eu-north-1:
+      HVM64: ami-0de4b8910494dba0f
+      HVMG2: ami-32d55b4c
+    eu-south-1:
+      HVM64: ami-08427144fe9ebdef6
+      HVMG2: NOT_SUPPORTED
+    eu-west-1:
+      HVM64: ami-015232c01a82b847b
+      HVMG2: ami-0d5299b1c6112c3c7
+    eu-west-2:
+      HVM64: ami-0765d48d7e15beb93
+      HVMG2: NOT_SUPPORTED
+    eu-west-3:
+      HVM64: ami-0caf07637eda19d9c
+      HVMG2: NOT_SUPPORTED
+   
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties: {}
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  
+ 
+  SubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ]
+      MapPublicIpOnLaunch: true
+      
+      
+  SubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs ]
+      MapPublicIpOnLaunch: true
+
+
+
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  Route:
+    Type: AWS::EC2::Route
+    DependsOn: VPCGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetOne
+      RouteTableId: !Ref RouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubnetTwo
+      RouteTableId: !Ref RouteTable
+
+  WebServer:
+    Type: 'AWS::EC2::Instance'
+    Metadata:
+      'AWS::CloudFormation::Init':
+        configSets:
+          wordpress_install:
+            - install_cfn
+            - install_wordpress
+            - configure_wordpress
+        install_cfn:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Join 
+                - ''
+                - - |
+                    [main]
+                  - stack=
+                  - !Ref 'AWS::StackId'
+                  - |+
+
+                  - region=
+                  - !Ref 'AWS::Region'
+                  - |+
+
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Join 
+                - ''
+                - - |
+                    [cfn-auto-reloader-hook]
+                  - |
+                    triggers=post.update
+                  - |
+                    path=Resources.WebServer.Metadata.AWS::CloudFormation::Init
+                  - 'action=/opt/aws/bin/cfn-init -v '
+                  - '         --stack '
+                  - !Ref 'AWS::StackName'
+                  - '         --resource WebServer '
+                  - '         --configsets wordpress_install '
+                  - '         --region '
+                  - !Ref 'AWS::Region'
+                  - |+
+
+              mode: '000400'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: 'true'
+                ensureRunning: 'true'
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+        install_wordpress:
+          packages:
+            yum:
+              php73: []
+              php73-mysqlnd: []
+              mysql57: []
+              mysql57-server: []
+              mysql57-devel: []
+              mysql57-libs: []
+              httpd24: []
+          sources:
+            /var/www/html: !Sub
+              - https://wordpress.org/wordpress-${Version}.zip
+              - { Version: !Ref WordPressVersion }
+          files:
+            /tmp/setup.mysql:
+              content: !Join 
+                - ''
+                - - 'CREATE DATABASE '
+                  - !Ref DBName
+                  - |
+                    ;
+                  - CREATE USER '
+                  - !Ref DBUsername
+                  - '''@''localhost'' IDENTIFIED BY '''
+                  - !Ref DBPassword
+                  - |
+                    ';
+                  - 'GRANT ALL ON '
+                  - !Ref DBName
+                  - .* TO '
+                  - !Ref DBUsername
+                  - |
+                    '@'localhost';
+                  - |
+                    FLUSH PRIVILEGES;
+              mode: '000400'
+              owner: root
+              group: root
+            /tmp/create-wp-config:
+              content: !Join 
+                - ''
+                - - |
+                    #!/bin/bash -xe
+                  - >
+                    cp /var/www/html/wordpress/wp-config-sample.php
+                    /var/www/html/wordpress/wp-config.php
+                  - sed -i "s/'database_name_here'/'
+                  - !Ref DBName
+                  - |
+                    '/g" wp-config.php
+                  - sed -i "s/'username_here'/'
+                  - !Ref DBUsername
+                  - |
+                    '/g" wp-config.php
+                  - sed -i "s/'password_here'/'
+                  - !Ref DBPassword
+                  - |
+                    '/g" wp-config.php
+              mode: '000500'
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              httpd:
+                enabled: 'true'
+                ensureRunning: 'true'
+              mysqld:
+                enabled: 'true'
+                ensureRunning: 'true'
+        configure_wordpress:
+          commands:
+            01_set_mysql_root_password:
+              command: !Join 
+                - ''
+                - - mysqladmin -u root password '
+                  - !Ref DBPassword
+                  - ''''
+              test: !Join 
+                - ''
+                - - '$(mysql '
+                  - !Ref DBName
+                  - ' -u root --password='''
+                  - !Ref DBPassword
+                  - ''' >/dev/null 2>&1 </dev/null); (( $? != 0 ))'
+            02_create_database:
+              command: !Join 
+                - ''
+                - - mysql -u root --password='
+                  - !Ref DBPassword
+                  - ''' < /tmp/setup.mysql'
+              test: !Join 
+                - ''
+                - - '$(mysql '
+                  - !Ref DBName
+                  - ' -u root --password='''
+                  - !Ref DBPassword
+                  - ''' >/dev/null 2>&1 </dev/null); (( $? != 0 ))'
+            03_configure_wordpress:
+              command: /tmp/create-wp-config
+              cwd: /var/www/html/wordpress
+            04_update_apache_config:
+              command: |
+                sudo touch '/home/ec2-user/init_started.txt'
+                sudo sed -i 's#DocumentRoot "/var/www/html"#DocumentRoot "/var/www/html/wordpress"#g' /etc/httpd/conf/httpd.conf
+                sudo service httpd restart
+                sudo touch '/home/ec2-user/init_finished.txt'
+
+    Properties:
+      ImageId: !FindInMap 
+        - AWSRegionArch2AMI
+        - !Ref 'AWS::Region'
+        - !FindInMap 
+          - AWSInstanceType2Arch
+          - !Ref EC2InstanceType
+          - Arch
+      InstanceType: !Ref EC2InstanceType
+        
+      SubnetId: !Ref SubnetOne
+      SecurityGroupIds:
+        - !Ref EC2InstanceSecurityGroup
+      KeyName: !Ref KeyName
+      UserData: !Base64 
+        'Fn::Join':
+          - ''
+          - - |
+              #!/bin/bash -xe
+            - |
+              yum update -y aws-cfn-bootstrap
+            - '/opt/aws/bin/cfn-init -v '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource WebServer '
+            - '         --configsets wordpress_install '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - |+
+
+            - '/opt/aws/bin/cfn-signal -e $? '
+            - '         --stack '
+            - !Ref 'AWS::StackName'
+            - '         --resource WebServer '
+            - '         --region '
+            - !Ref 'AWS::Region'
+            - |+
+
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+
+  EC2InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22 and HTTP access via port 80
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+ 
+  LoadBalancerSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP traffic to the load balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - !Ref SubnetOne
+        - !Ref SubnetTwo
+      SecurityGroups: 
+        - !Ref LoadBalancerSG
+              
+  #Create a Listener on Port 80
+  ALBListenerNoSslCertificate:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - RedirectConfig:
+            Host: '#{host}'
+            Path: '/#{path}'
+            Port: '443'
+            Protocol: HTTPS
+            StatusCode: HTTP_301
+          Type: redirect
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+
+  #Create a Listener on Port 443
+  ALBListenerSslCertificate:
+    Type : AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Certificates:
+        - CertificateArn: !Ref SSLCertARN
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+  
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200,302
+      Name: MyWebServers
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 5
+      VpcId: !Ref VPC
+      Targets:
+        - Id: !Ref WebServer
+          Port: 80
+
+  RecordSet:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: riccardobrue.click
+      Type: A
+      AliasTarget:
+        HostedZoneId: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+        DNSName: !GetAtt ApplicationLoadBalancer.DNSName
